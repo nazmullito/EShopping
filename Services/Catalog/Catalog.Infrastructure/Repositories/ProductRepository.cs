@@ -45,7 +45,7 @@ namespace Catalog.Infrastructure.Repositories
             return await _context.Products.Find(filter).ToListAsync();
         }
 
-        public async Task<IEnumerable<Product>> GetProducts(CatalogSpecParams catalogSpecParams)
+        public async Task<Pagination<Product>> GetProducts(CatalogSpecParams catalogSpecParams)
         {
             var builder = Builders<Product>.Filter;
             var filter = builder.Empty;
@@ -65,7 +65,62 @@ namespace Catalog.Infrastructure.Repositories
                 filter &= typeFilter;
             }
 
-            return await _context.Products.Find(x => true).ToListAsync();
+            if (!string.IsNullOrEmpty(catalogSpecParams.Sort))
+            {
+                return new Pagination<Product>
+                {
+                    PageSize = catalogSpecParams.PageSize,
+                    PageIndex = catalogSpecParams.PageIndex,
+                    Data = await DataFilter(catalogSpecParams, filter),
+                    Count = await _context.Products.CountDocumentsAsync(p =>
+                        true) //TODO: Need to check while applying with UI
+                };
+            }
+
+            return new Pagination<Product>
+            {
+                PageSize = catalogSpecParams.PageSize,
+                PageIndex = catalogSpecParams.PageIndex,
+                Data = await _context
+                    .Products
+                    .Find(filter)
+                    .Sort(Builders<Product>.Sort.Ascending("Name"))
+                    .Skip(catalogSpecParams.PageSize * (catalogSpecParams.PageIndex - 1))
+                    .Limit(catalogSpecParams.PageSize)
+                    .ToListAsync(),
+                Count = await _context.Products.CountDocumentsAsync(p => true)
+            };
+        }
+
+        private async Task<IReadOnlyList<Product>> DataFilter(CatalogSpecParams catalogSpecParams, FilterDefinition<Product> filter)
+        {
+            switch (catalogSpecParams.Sort)
+            {
+                case "priceAsc":
+                    return await _context
+                        .Products
+                        .Find(filter)
+                        .Sort(Builders<Product>.Sort.Ascending("Price"))
+                        .Skip(catalogSpecParams.PageSize * (catalogSpecParams.PageIndex - 1))
+                        .Limit(catalogSpecParams.PageSize)
+                        .ToListAsync();
+                case "priceDesc":
+                    return await _context
+                        .Products
+                        .Find(filter)
+                        .Sort(Builders<Product>.Sort.Descending("Price"))
+                        .Skip(catalogSpecParams.PageSize * (catalogSpecParams.PageIndex - 1))
+                        .Limit(catalogSpecParams.PageSize)
+                        .ToListAsync();
+                default:
+                    return await _context
+                        .Products
+                        .Find(filter)
+                        .Sort(Builders<Product>.Sort.Ascending("Name"))
+                        .Skip(catalogSpecParams.PageSize * (catalogSpecParams.PageIndex - 1))
+                        .Limit(catalogSpecParams.PageSize)
+                        .ToListAsync();
+            }
         }
 
         public async Task<bool> UpdateProduct(Product product)
